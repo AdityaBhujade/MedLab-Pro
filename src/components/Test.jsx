@@ -276,8 +276,10 @@ const TestHistory = ({ refreshFlag }) => {
         if (!testRes.ok || !patientRes.ok) throw new Error('Failed to fetch data');
         const testData = await testRes.json();
         const patientData = await patientRes.json();
-        setTestResults(testData);
         setPatients(patientData);
+        // Filter test results to only include tests for existing patients
+        const validPatientIds = new Set(patientData.map(p => p.id));
+        setTestResults(testData.filter(tr => validPatientIds.has(tr.patient_id)));
       } catch (err) {
         setError('Could not load test history');
       }
@@ -289,6 +291,23 @@ const TestHistory = ({ refreshFlag }) => {
   const getPatientName = (id) => {
     const p = patients.find(p => p.id === id);
     return p ? p.full_name : 'Unknown';
+  };
+
+  const handleDelete = async (testId) => {
+    if (!window.confirm('Are you sure you want to delete this test result?')) return;
+    
+    try {
+      const res = await fetch(`http://localhost:5000/api/tests/${testId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setTestResults(prev => prev.filter(tr => tr.id !== testId));
+      } else {
+        setError('Failed to delete test result');
+      }
+    } catch (err) {
+      setError('Failed to delete test result');
+    }
   };
 
   if (loading) return <div className="p-4">Loading...</div>;
@@ -314,6 +333,7 @@ const TestHistory = ({ refreshFlag }) => {
               <th className="px-4 py-2 border">Date</th>
               <th className="px-4 py-2 border">Tests</th>
               <th className="px-4 py-2 border">Notes</th>
+              <th className="px-4 py-2 border">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -333,6 +353,15 @@ const TestHistory = ({ refreshFlag }) => {
                   </ul>
                 </td>
                 <td className="px-4 py-2 border">{tr.notes}</td>
+                <td className="px-4 py-2 border">
+                  <button
+                    onClick={() => handleDelete(tr.id)}
+                    className="text-red-600 hover:text-red-800"
+                    title="Delete test result"
+                  >
+                    🗑️
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

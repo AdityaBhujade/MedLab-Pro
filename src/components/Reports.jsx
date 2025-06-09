@@ -11,6 +11,9 @@ const Reports = () => {
   const [showPreview, setShowPreview] = useState(false);
   const previewRef = useRef();
   const [testResults, setTestResults] = useState([]);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchPatients = async () => {
@@ -112,16 +115,120 @@ const Reports = () => {
   };
 
   // Email/WhatsApp confirmation
-  const handleEmail = () => {
+  const handleEmail = async () => {
     if (!patientObj) return;
     if (window.confirm(`Send this report to patient's email: ${patientObj.email}?`)) {
-      alert('Pretend to send PDF to backend for emailing.');
+      try {
+        // Generate PDF first
+        const reportDiv = previewRef.current.querySelector('.report-content') || previewRef.current;
+        const pdfBlob = await import('html2pdf.js').then(html2pdf => 
+          html2pdf.default(reportDiv, {
+            margin: 0.5,
+            filename: 'Lab_Report.pdf',
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+          }).output('blob')
+        );
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('pdf', pdfBlob, 'Lab_Report.pdf');
+        formData.append('email', patientObj.email);
+        formData.append('patientName', patientObj.full_name);
+
+        // Send to backend
+        const response = await fetch('http://localhost:5000/api/send-email', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          alert('Report has been sent to the patient\'s email successfully!');
+        } else {
+          throw new Error('Failed to send email');
+        }
+      } catch (error) {
+        alert('Failed to send email. Please try again later.');
+        console.error('Email error:', error);
+      }
     }
   };
-  const handleWhatsApp = () => {
+
+  const handleWhatsApp = async () => {
     if (!patientObj) return;
     if (window.confirm(`Send this report to patient's WhatsApp: ${patientObj.contact_number}?`)) {
-      alert('Pretend to send PDF to WhatsApp.');
+      try {
+        // Generate PDF first
+        const reportDiv = previewRef.current.querySelector('.report-content') || previewRef.current;
+        const pdfBlob = await import('html2pdf.js').then(html2pdf => 
+          html2pdf.default(reportDiv, {
+            margin: 0.5,
+            filename: 'Lab_Report.pdf',
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+          }).output('blob')
+        );
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('pdf', pdfBlob, 'Lab_Report.pdf');
+        formData.append('phone', patientObj.contact_number);
+        formData.append('patientName', patientObj.full_name);
+
+        // Send to backend
+        const response = await fetch('http://localhost:5000/api/send-whatsapp', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          alert('Report has been sent to the patient\'s WhatsApp successfully!');
+        } else {
+          throw new Error('Failed to send WhatsApp message');
+        }
+      } catch (error) {
+        alert('Failed to send WhatsApp message. Please try again later.');
+        console.error('WhatsApp error:', error);
+      }
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!selectedPatient) {
+      setError('Please select a patient first');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Generate PDF
+      const pdfBlob = await generatePDF();
+      const formData = new FormData();
+      formData.append('pdf', pdfBlob, 'report.pdf');
+      formData.append('email', selectedPatient.email);
+      formData.append('patientName', selectedPatient.name);
+      formData.append('companyEmail', 'your-company-email@example.com'); // Replace with your company email
+
+      const response = await fetch('http://localhost:5000/api/send-email', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send email');
+      }
+
+      // Show success message in a modal
+      setShowSuccessModal(true);
+      setSuccessMessage(data.details || 'Email sent successfully');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -294,6 +401,48 @@ const Reports = () => {
           <span className="text-5xl text-gray-300 mb-4">📄</span>
           <div className="text-xl font-semibold text-gray-500 mb-2">No patients available</div>
           <div className="text-gray-400">Add patients first to generate reports</div>
+        </div>
+      )}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Success!</h3>
+              <p className="text-sm text-gray-500 mb-4">{successMessage}</p>
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Error</h3>
+              <p className="text-sm text-gray-500 mb-4">{error}</p>
+              <button
+                onClick={() => setError(null)}
+                className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
